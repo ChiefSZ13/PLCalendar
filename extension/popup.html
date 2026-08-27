@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>PrairieLearn Calendar</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="mark">PL</div>
+        <div>
+          <h1>Deadline sync</h1>
+          <p>PrairieLearn → Apple Calendar</p>
+        </div>
+      </header>
+
+      <section class="status" aria-live="polite">
+        <strong id="status-title">Ready to scan</strong>
+        <span id="status-detail">Open PrairieLearn, then scan your courses.</span>
+      </section>
+
+      <button id="scan" class="primary">Scan PrairieLearn</button>
+      <button id="download">Download .ics snapshot</button>
+
+      <section class="settings">
+        <label class="toggle">
+          <input id="auto-sync" type="checkbox">
+          <span>Sync to local Apple Calendar feed</span>
+        </label>
+        <label for="endpoint">Local companion endpoint</label>
+        <input id="endpoint" type="url" spellcheck="false">
+      </section>
+
+      <footer>
+        <span id="feed-state">Local-only · no cloud account</span>
+      </footer>
+    </main>
+    <script src="core.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

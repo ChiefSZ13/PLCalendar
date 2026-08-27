@@ -1,0 +1,52 @@
+:root {
+  color-scheme: light;
+  font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #182230;
+  background: #f5f7fb;
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; min-width: 360px; }
+
+main { padding: 18px; }
+
+header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+
+.mark {
+  display: grid; place-items: center; width: 44px; height: 44px;
+  border-radius: 13px; color: white; font-weight: 800;
+  background: linear-gradient(145deg, #0f766e, #14b8a6);
+  box-shadow: 0 8px 24px rgba(15, 118, 110, .22);
+}
+
+h1 { font-size: 18px; line-height: 1.2; margin: 0; }
+header p { color: #667085; margin: 3px 0 0; }
+
+.status {
+  display: flex; flex-direction: column; gap: 3px; padding: 12px;
+  margin-bottom: 12px; border: 1px solid #dbe2ea; border-radius: 12px;
+  background: white;
+}
+
+.status span { color: #667085; font-size: 12px; }
+
+button {
+  width: 100%; margin-top: 8px; padding: 10px 12px; border: 1px solid #ccd5df;
+  border-radius: 9px; color: #263445; background: white; font-weight: 650; cursor: pointer;
+}
+
+button.primary { color: white; border-color: #0f766e; background: #0f766e; }
+button:disabled { cursor: wait; opacity: .6; }
+
+.settings { display: grid; gap: 9px; margin-top: 17px; padding-top: 15px; border-top: 1px solid #dbe2ea; }
+.settings > label:not(.toggle) { color: #667085; font-size: 12px; }
+.toggle { display: flex; align-items: center; gap: 8px; }
+.toggle input { accent-color: #0f766e; }
+
+input[type="url"] {
+  width: 100%; padding: 8px; border: 1px solid #ccd5df; border-radius: 8px;
+  color: #344054; background: white; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+footer { margin-top: 13px; color: #7b8794; font-size: 11px; text-align: center; }

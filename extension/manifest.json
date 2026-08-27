@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "PrairieLearn Calendar",
+  "version": "0.2.1",
+  "description": "Collect PrairieLearn deadlines and sync them to a private local calendar feed.",
+  "permissions": [
+    "alarms",
+    "downloads",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://us.prairielearn.com/*",
+    "http://127.0.0.1:49321/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://us.prairielearn.com/*"],
+      "js": ["core.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "PrairieLearn Calendar",
+    "default_popup": "popup.html"
+  }
+}

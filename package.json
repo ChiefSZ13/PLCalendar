@@ -1,0 +1,11 @@
+{
+  "name": "prairielearn-calendar-draft",
+  "version": "0.2.1",
+  "private": true,
+  "description": "Local-first PrairieLearn deadline sync for Apple Calendar",
+  "scripts": {
+    "start": "node companion/server.mjs",
+    "test": "node --test tests/*.test.cjs",
+    "check": "node --check extension/core.js && node --check extension/content.js && node --check extension/background.js && node --check extension/popup.js && node --check companion/server.mjs"
+  }
+}
