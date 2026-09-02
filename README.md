@@ -17,7 +17,9 @@ PrairieLearn in your signed-in browser
 
 The browser extension is the collector, so PrairieLearn passwords, cookies, and university SSO credentials never go to the server. Every PrairieLearn page load performs a fresh scan and uploads the result. The server stores only the latest normalized calendar snapshot.
 
-Each positive-credit cutoff becomes a stable calendar event. The title is `COURSE NUMBER · assignment name`; the available-credit percentage, exact cutoff, score, and PrairieLearn link are in the event details. Stable event IDs let Apple Calendar update existing events when PrairieLearn changes a credit window.
+Each positive-credit cutoff becomes a stable calendar event. The title is `COURSE NUMBER · assignment name`; completed work is prefixed with `✅`. The available-credit percentage, exact cutoff, completion reason, score, and PrairieLearn link are in the event details. Stable event IDs let Apple Calendar update existing events when PrairieLearn changes a credit window or completion state.
+
+Completion is intentionally not based on an exact score. An assignment is complete when it has at least 100% credit (including bonus totals such as 110%), or when every question on its PrairieLearn assessment page has at least one attempt. This means a finished assignment can still be checked at 95% while genuinely unfinished work stays unchecked. The rule is applied to both timed and all-day feeds on every automatic scan.
 
 ## Local development
 
@@ -67,7 +69,7 @@ Put the domain, released image name, and the two independently generated values 
 
 ```dotenv
 PLCALENDAR_DOMAIN=calendar.example.com
-PLCALENDAR_IMAGE=ghcr.io/your-account/plcalendar:v0.3.0
+PLCALENDAR_IMAGE=ghcr.io/your-account/plcalendar:v0.4.0
 PLCALENDAR_WRITE_TOKEN=first-generated-secret
 PLCALENDAR_FEED_TOKEN=second-generated-secret
 ```
@@ -109,11 +111,11 @@ The first feed preserves exact cutoff times. The second displays each cutoff in 
 The included GitHub Actions workflow builds multi-platform images and publishes them to `ghcr.io` whenever a semantic version tag is pushed:
 
 ```bash
-git tag -a v0.3.0 -m "Release v0.3.0"
-git push origin v0.3.0
+git tag -a v0.4.0 -m "Release v0.4.0"
+git push origin v0.4.0
 ```
 
-The workflow publishes immutable version and commit tags, plus convenience `0.3` and `latest` tags. Pin the server to the full version such as `v0.3.0` instead of `latest` so upgrades and rollbacks are deliberate.
+The workflow publishes immutable version and commit tags, plus convenience `0.4` and `latest` tags. Pin the server to the full version such as `v0.4.0` instead of `latest` so upgrades and rollbacks are deliberate.
 
 For a public image, change the package visibility to public in GitHub after its first publication. For a private image, authenticate the server before pulling:
 

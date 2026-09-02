@@ -23,6 +23,54 @@
     };
   }
 
+  function samePage(first, second) {
+    const normalize = (value) => {
+      const url = new URL(value);
+      url.hash = "";
+      return url.href.replace(/\/$/, "");
+    };
+    return normalize(first) === normalize(second);
+  }
+
+  async function enrichAssessmentCompletions(assessments) {
+    const enriched = [...assessments];
+    let nextIndex = 0;
+    let failedChecks = 0;
+
+    async function worker() {
+      while (nextIndex < enriched.length) {
+        const index = nextIndex++;
+        const assessment = enriched[index];
+        const baseline = assessment.completion || PLCalendarCore.determineCompletion(assessment);
+        if (baseline.completed || baseline.status === "not_started" || !assessment.url.includes("/assessment_instance/")) {
+          enriched[index] = { ...assessment, completion: baseline };
+          continue;
+        }
+
+        try {
+          const assessmentDocument = samePage(location.href, assessment.url)
+            ? document
+            : await fetchDocument(assessment.url);
+          const progress = PLCalendarCore.parseQuestionProgressHtml(
+            assessmentDocument.documentElement.outerHTML
+          );
+          enriched[index] = {
+            ...assessment,
+            completion: PLCalendarCore.determineCompletion(assessment, progress)
+          };
+        } catch (error) {
+          failedChecks += 1;
+          console.warn(`Could not inspect completion for ${assessment.title}:`, error.message);
+          enriched[index] = { ...assessment, completion: baseline };
+        }
+      }
+    }
+
+    const workerCount = Math.min(4, enriched.length);
+    await Promise.all(Array.from({ length: workerCount }, worker));
+    return { assessments: enriched, failedChecks };
+  }
+
   async function performScan() {
     const homepage = location.pathname === "/" ? document : await fetchDocument("https://us.prairielearn.com/");
     const courseUrls = PLCalendarCore.findCourseUrls(homepage, "https://us.prairielearn.com/");
@@ -35,7 +83,9 @@
       return PLCalendarCore.parseCourseDocument(courseDocument, url);
     }));
 
-    const assessments = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+    const parsedAssessments = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+    const completionScan = await enrichAssessmentCompletions(parsedAssessments);
+    const assessments = completionScan.assessments;
     const failedCourses = results.filter((result) => result.status === "rejected").length;
     const settings = await loadSettings();
     const events = PLCalendarCore.buildCalendarEvents(assessments, settings);
@@ -43,6 +93,7 @@
       scannedAt: new Date().toISOString(),
       courseCount: courseUrls.length,
       failedCourses,
+      failedCompletionChecks: completionScan.failedChecks,
       assessments,
       events
     };
@@ -147,22 +198,24 @@
     try {
       const result = await scanPrairieLearn();
       const time = new Date(result.scannedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      const completedCount = result.assessments.filter((assessment) => assessment.completion?.completed).length;
+      const progress = `${completedCount} completed · ${result.events.length} credit windows`;
       if (!result.syncAttempted) {
         showRefreshBubble({
           title: "PrairieLearn automatically refreshed",
-          detail: `${result.events.length} credit windows · calendar sync is off`,
+          detail: `${progress} · calendar sync is off`,
           tone: "warning"
         });
       } else if (result.sync && !result.sync.ok) {
         showRefreshBubble({
           title: "PrairieLearn refreshed",
-          detail: `${result.events.length} credit windows at ${time} · calendar server unavailable`,
+          detail: `${progress} at ${time} · calendar server unavailable`,
           tone: "warning"
         });
       } else {
         showRefreshBubble({
           title: "Calendar automatically updated",
-          detail: `${result.events.length} credit windows · ${time}`
+          detail: `${progress} · ${time}`
         });
       }
     } catch (error) {

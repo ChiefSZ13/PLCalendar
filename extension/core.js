@@ -35,6 +35,64 @@ var PLCalendarCore = (() => {
     return match ? Number(match[0]) : null;
   }
 
+  function parseScorePercent(value) {
+    const text = cleanText(value);
+    if (!text || /not started/i.test(text)) return null;
+    const match = text.match(/-?\d+(?:\.\d+)?\s*%/);
+    return match ? Number.parseFloat(match[0]) : null;
+  }
+
+  function parseQuestionProgressHtml(html) {
+    const questionRows = Array.from(
+      String(html || "").matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi),
+      (match) => match[1]
+    ).filter((row) => /href\s*=\s*["'][^"']*\/instance_question\//i.test(row));
+    const attemptedCount = questionRows.filter((row) => /(?:\?|&|&amp;)variant_id=/i.test(row)).length;
+
+    return {
+      questionCount: questionRows.length,
+      attemptedCount,
+      allAttempted: questionRows.length > 0 && attemptedCount === questionRows.length
+    };
+  }
+
+  function determineCompletion(assessment, questionProgress = null) {
+    const scoreText = cleanText(assessment?.score);
+    const scorePercent = parseScorePercent(scoreText);
+    const hasInstance = /\/assessment_instance\//.test(String(assessment?.url || ""));
+    const progress = questionProgress && Number.isInteger(questionProgress.questionCount)
+      ? questionProgress
+      : null;
+
+    if (/not started/i.test(scoreText) || (!hasInstance && scorePercent === null)) {
+      return { completed: false, status: "not_started", reason: "not_started", scorePercent };
+    }
+    if (scorePercent !== null && scorePercent >= 100) {
+      return { completed: true, status: "completed", reason: "full_credit", scorePercent };
+    }
+    if (progress?.allAttempted) {
+      return {
+        completed: true,
+        status: "completed",
+        reason: "all_questions_attempted",
+        scorePercent,
+        questionCount: progress.questionCount,
+        attemptedCount: progress.attemptedCount
+      };
+    }
+
+    return {
+      completed: false,
+      status: hasInstance ? "in_progress" : "unknown",
+      reason: hasInstance ? "questions_remaining" : "unknown",
+      scorePercent,
+      ...(progress ? {
+        questionCount: progress.questionCount,
+        attemptedCount: progress.attemptedCount
+      } : {})
+    };
+  }
+
   function decodeHtmlText(value) {
     const entities = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
     return cleanText(String(value || "")
@@ -108,7 +166,7 @@ var PLCalendarCore = (() => {
         const assessmentId = url.match(/\/(?:assessment|assessment_instance)\/(\d+)/)?.[1] || url;
         const tiers = readAccessTiers(cells[2].querySelector('[data-bs-content]'));
 
-        assessments.push({
+        const assessment = {
           id: `${courseId}-${assessmentId}`,
           courseId,
           courseName,
@@ -119,7 +177,9 @@ var PLCalendarCore = (() => {
           score: cleanText(cells[3].textContent),
           tiers,
           primaryDeadline: pickPrimaryDeadline(tiers)
-        });
+        };
+        assessment.completion = determineCompletion(assessment);
+        assessments.push(assessment);
       }
     }
     return assessments;
@@ -133,9 +193,24 @@ var PLCalendarCore = (() => {
   }
 
   function eventDescription(assessment) {
+    const completion = assessment.completion || determineCompletion(assessment);
+    let completionText = "";
+    if (completion.completed) {
+      completionText = completion.reason === "all_questions_attempted"
+        ? "Completion: Completed (all questions attempted)"
+        : "Completion: Completed (full credit earned)";
+    } else if (completion.status === "in_progress") {
+      const progress = Number.isInteger(completion.questionCount)
+        ? ` (${completion.attemptedCount}/${completion.questionCount} questions attempted)`
+        : "";
+      completionText = `Completion: In progress${progress}`;
+    } else if (completion.status === "not_started") {
+      completionText = "Completion: Not started";
+    }
     const details = [
       `${assessment.courseName} · ${assessment.group || "Assessment"}`,
       assessment.label ? `PrairieLearn label: ${assessment.label}` : "",
+      completionText,
       assessment.score ? `Status/score at last scan: ${assessment.score}` : "",
       `Open: ${assessment.url}`
     ];
@@ -150,6 +225,8 @@ var PLCalendarCore = (() => {
     const events = [];
 
     for (const assessment of assessments) {
+      const completion = assessment.completion || determineCompletion(assessment);
+      const baseTitle = `${courseCode(assessment.courseName)} · ${assessment.title}`;
       const seen = new Set();
       for (const tier of assessment.tiers || []) {
         const identity = `${tier.credit}|${tier.end}`;
@@ -158,7 +235,7 @@ var PLCalendarCore = (() => {
         const tierMs = new Date(tier.end).getTime();
         events.push({
           uid: `pl-${assessment.id}-${String(tier.credit).replace(".", "_")}pct@plcalendar.local`,
-          title: `${courseCode(assessment.courseName)} · ${assessment.title}`,
+          title: completion.completed ? `✅ ${baseTitle}` : baseTitle,
           start: tier.end,
           end: new Date(tierMs + 15 * 60 * 1000).toISOString(),
           allDayDate: tier.rawEnd?.match(/^\d{4}-\d{2}-\d{2}/)?.[0] || null,
@@ -168,7 +245,8 @@ var PLCalendarCore = (() => {
             `Credit window ends: ${new Date(tier.end).toLocaleString()}`,
             eventDescription(assessment)
           ].join("\n"),
-          category: assessment.group || "PrairieLearn"
+          category: assessment.group || "PrairieLearn",
+          completed: completion.completed
         });
       }
     }
@@ -280,10 +358,13 @@ var PLCalendarCore = (() => {
     DEFAULT_SETTINGS,
     buildCalendarEvents,
     cleanText,
+    determineCompletion,
     findCourseUrls,
     parseAccessDetailsHtml,
     parseCourseDocument,
+    parseQuestionProgressHtml,
     parsePrairieDate,
+    parseScorePercent,
     pickPrimaryDeadline,
     toICS
   };
