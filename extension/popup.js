@@ -6,6 +6,8 @@ const elements = {
   download: document.querySelector("#download"),
   autoSync: document.querySelector("#auto-sync"),
   endpoint: document.querySelector("#endpoint"),
+  writeToken: document.querySelector("#write-token"),
+  saveConnection: document.querySelector("#save-connection"),
   title: document.querySelector("#status-title"),
   detail: document.querySelector("#status-detail"),
   feedState: document.querySelector("#feed-state")
@@ -29,24 +31,45 @@ function renderSnapshot(snapshot) {
 }
 
 async function load() {
-  const [{ settings }, { snapshot }] = await Promise.all([
+  const [{ settings }, { snapshot, connection }] = await Promise.all([
     chrome.storage.sync.get("settings"),
-    chrome.storage.local.get("snapshot")
+    chrome.storage.local.get(["snapshot", "connection"])
   ]);
   const merged = { ...PLCalendarCore.DEFAULT_SETTINGS, ...(settings || {}) };
   elements.autoSync.checked = merged.autoSync;
   elements.endpoint.value = merged.syncEndpoint;
+  elements.writeToken.value = connection?.writeToken || "";
   elements.download.disabled = !snapshot?.events?.length;
   renderSnapshot(snapshot);
 }
 
+async function requestEndpointPermission(endpoint) {
+  const url = new URL(endpoint);
+  if (!["http:", "https:"].includes(url.protocol)) throw new Error("The endpoint must use HTTP or HTTPS.");
+  if (url.protocol !== "https:" && !["127.0.0.1", "localhost"].includes(url.hostname)) {
+    throw new Error("Remote calendar servers must use HTTPS.");
+  }
+
+  const origin = `${url.protocol}//${url.host}/*`;
+  const hasPermission = await chrome.permissions.contains({ origins: [origin] });
+  if (!hasPermission) {
+    const granted = await chrome.permissions.request({ origins: [origin] });
+    if (!granted) throw new Error("Edge needs permission to connect to this calendar server.");
+  }
+}
+
 async function saveSettings() {
+  const endpoint = elements.endpoint.value.trim() || PLCalendarCore.DEFAULT_SETTINGS.syncEndpoint;
+  if (elements.autoSync.checked) await requestEndpointPermission(endpoint);
   const settings = {
     autoSync: elements.autoSync.checked,
-    syncEndpoint: elements.endpoint.value.trim() || PLCalendarCore.DEFAULT_SETTINGS.syncEndpoint
+    syncEndpoint: endpoint
   };
-  await chrome.storage.sync.set({ settings });
-  elements.feedState.textContent = settings.autoSync ? "Local feed enabled" : "Manual .ics export only";
+  await Promise.all([
+    chrome.storage.sync.set({ settings }),
+    chrome.storage.local.set({ connection: { writeToken: elements.writeToken.value.trim() } })
+  ]);
+  elements.feedState.textContent = settings.autoSync ? "Calendar sync enabled" : "Manual .ics export only";
 }
 
 elements.scan.addEventListener("click", async () => {
@@ -62,7 +85,7 @@ elements.scan.addEventListener("click", async () => {
     if (!response?.ok) throw new Error(response?.error || "The scan did not complete.");
     renderSnapshot(response.result);
     if (response.result.sync && !response.result.sync.ok) {
-      elements.feedState.textContent = "Scanned; local companion is not running";
+      elements.feedState.textContent = "Scanned; calendar server is unavailable";
     } else if (elements.autoSync.checked) {
       elements.feedState.textContent = "Calendar feed updated";
     }
@@ -81,8 +104,20 @@ elements.download.addEventListener("click", async () => {
   if (!response?.ok) showStatus("Download failed", response?.error || "Unknown error", true);
 });
 
-for (const element of [elements.autoSync, elements.endpoint]) {
-  element.addEventListener("change", saveSettings);
-}
+elements.autoSync.addEventListener("change", () => {
+  saveSettings().catch((error) => showStatus("Could not save", error.message, true));
+});
+
+elements.saveConnection.addEventListener("click", async () => {
+  elements.saveConnection.disabled = true;
+  try {
+    await saveSettings();
+    showStatus("Connection saved", "The next PrairieLearn scan will use this calendar server.");
+  } catch (error) {
+    showStatus("Could not save connection", error.message, true);
+  } finally {
+    elements.saveConnection.disabled = false;
+  }
+});
 
 load().catch((error) => showStatus("Could not load", error.message, true));

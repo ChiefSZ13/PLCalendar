@@ -27,14 +27,17 @@
       <section class="settings">
         <label class="toggle">
           <input id="auto-sync" type="checkbox">
-          <span>Sync to local Apple Calendar feed</span>
+          <span>Sync to Apple Calendar feed</span>
         </label>
-        <label for="endpoint">Local companion endpoint</label>
+        <label for="endpoint">Calendar server endpoint</label>
         <input id="endpoint" type="url" spellcheck="false">
+        <label for="write-token">Private write token</label>
+        <input id="write-token" type="password" autocomplete="off" spellcheck="false" placeholder="Optional for localhost">
+        <button id="save-connection" type="button">Save connection</button>
       </section>
 
       <footer>
-        <span id="feed-state">Local-only · no cloud account</span>
+        <span id="feed-state">Calendar connection ready</span>
       </footer>
     </main>
     <script src="core.js"></script>

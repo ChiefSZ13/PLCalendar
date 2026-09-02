@@ -1,0 +1,46 @@
+services:
+  plcalendar:
+    image: ${PLCALENDAR_IMAGE:-plcalendar:local}
+    build:
+      context: .
+    restart: unless-stopped
+    environment:
+      PLCALENDAR_HOST: 0.0.0.0
+      PLCALENDAR_PORT: 49321
+      PLCALENDAR_DATA_DIR: /app/data
+      PLCALENDAR_PUBLIC_BASE_URL: https://${PLCALENDAR_DOMAIN:?Set PLCALENDAR_DOMAIN in .env}
+      PLCALENDAR_WRITE_TOKEN: ${PLCALENDAR_WRITE_TOKEN:?Set PLCALENDAR_WRITE_TOKEN in .env}
+      PLCALENDAR_FEED_TOKEN: ${PLCALENDAR_FEED_TOKEN:?Set PLCALENDAR_FEED_TOKEN in .env}
+    volumes:
+      - plcalendar-data:/app/data
+    expose:
+      - "49321"
+    networks:
+      - internal
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      plcalendar:
+        condition: service_healthy
+    environment:
+      PLCALENDAR_DOMAIN: ${PLCALENDAR_DOMAIN:?Set PLCALENDAR_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - internal
+
+networks:
+  internal:
+
+volumes:
+  plcalendar-data:
+  caddy-data:
+  caddy-config:

@@ -44,7 +44,7 @@ button:disabled { cursor: wait; opacity: .6; }
 .toggle { display: flex; align-items: center; gap: 8px; }
 .toggle input { accent-color: #0f766e; }
 
-input[type="url"] {
+input[type="url"], input[type="password"] {
   width: 100%; padding: 8px; border: 1px solid #ccd5df; border-radius: 8px;
   color: #344054; background: white; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
 }

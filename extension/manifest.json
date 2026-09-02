@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PrairieLearn Calendar",
-  "version": "0.2.1",
-  "description": "Collect PrairieLearn deadlines and sync them to a private local calendar feed.",
+  "version": "0.3.0",
+  "description": "Collect PrairieLearn deadlines and sync them to a private calendar feed.",
   "permissions": [
     "alarms",
     "downloads",
@@ -12,6 +12,10 @@
   "host_permissions": [
     "https://us.prairielearn.com/*",
     "http://127.0.0.1:49321/*"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
   ],
   "background": {
     "service_worker": "background.js"

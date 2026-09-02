@@ -15,12 +15,14 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "SYNC_LOCAL") {
     const endpoint = message.endpoint || "http://127.0.0.1:49321/api/events";
+    const headers = { "Content-Type": "application/json" };
+    if (message.writeToken) headers.Authorization = `Bearer ${message.writeToken}`;
     fetch(endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(message.snapshot)
     }).then(async (response) => {
-      if (!response.ok) throw new Error(`Local companion returned HTTP ${response.status}`);
+      if (!response.ok) throw new Error(`Calendar companion returned HTTP ${response.status}`);
       sendResponse({ ok: true, result: await response.json() });
     }).catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
