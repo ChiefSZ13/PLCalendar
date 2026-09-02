@@ -44,50 +44,88 @@ test("parses the exact Access details HTML used by PrairieLearn", () => {
   }]);
 });
 
-test("detects attempted questions from PrairieLearn assessment-instance rows", () => {
+test("uses awarded points rather than opened variants to measure question progress", () => {
   const html = `
     <table>
-      <tr><td><a href="/pl/course_instance/1/instance_question/11/">Question 1</a></td>
-          <td><a href="/pl/course_instance/1/instance_question/11/?variant_id=101">Attempt 1</a></td></tr>
-      <tr><td><a href='/pl/course_instance/1/instance_question/12/'>Question 2</a></td>
-          <td><a href='/pl/course_instance/1/instance_question/12/?foo=1&amp;variant_id=102'>Attempt 1</a></td></tr>
+      <tr><td><a href="/pl/course_instance/1/instance_question/11/">Question 1</a></td><td>1</td>
+          <td><a href="/pl/course_instance/1/instance_question/11/?variant_id=101">Open</a></td><td>1 / 1</td></tr>
+      <tr><td><a href='/pl/course_instance/1/instance_question/12/'>Question 2</a></td><td>1</td>
+          <td><a href='/pl/course_instance/1/instance_question/12/?variant_id=102'>Open</a></td><td>0.5 / 1</td></tr>
+      <tr><td><a href='/pl/course_instance/1/instance_question/13/'>Question 3</a></td><td>1</td>
+          <td><a href='/pl/course_instance/1/instance_question/13/?variant_id=103'>Open</a></td><td>&mdash; / 1</td></tr>
     </table>`;
   assert.deepEqual(parseQuestionProgressHtml(html), {
-    questionCount: 2,
+    questionCount: 3,
     attemptedCount: 2,
-    allAttempted: true
+    fullCreditCount: 1,
+    partialCreditCount: 1,
+    unansweredCount: 1,
+    allAttempted: false,
+    allFullCredit: false
   });
 });
 
-test("marks full credit or every-question-attempted work complete", () => {
+test("combines currently available credit with question-level full points", () => {
   const started = {
-    score: "95%",
     url: "https://us.prairielearn.com/pl/course_instance/1/assessment_instance/2/"
   };
   assert.equal(parseScorePercent("110%"), 110);
-  assert.deepEqual(determineCompletion({ ...started, score: "110%" }), {
-    completed: true,
-    status: "completed",
-    reason: "full_credit",
-    scorePercent: 110
-  });
-  assert.equal(determineCompletion(started, {
+  const noPartialQuestions = {
+    questionCount: 10,
+    attemptedCount: 8,
+    fullCreditCount: 8,
+    partialCreditCount: 0,
+    unansweredCount: 2,
+    allAttempted: false,
+    allFullCredit: false
+  };
+  const partialQuestion = {
+    ...noPartialQuestions,
+    attemptedCount: 9,
+    partialCreditCount: 1,
+    unansweredCount: 1
+  };
+
+  const belowCeiling = determineCompletion({
+    ...started,
+    score: "80%",
+    currentAvailableCredit: 100
+  }, noPartialQuestions);
+  assert.equal(belowCeiling.status, "in_progress");
+  assert.equal(belowCeiling.reason, "below_available_credit");
+
+  const ceilingMet = determineCompletion({
+    ...started,
+    score: "85%",
+    currentAvailableCredit: 80
+  }, noPartialQuestions);
+  assert.equal(ceilingMet.completed, true);
+  assert.equal(ceilingMet.reason, "available_credit_met");
+
+  const partialOverridesCeiling = determineCompletion({
+    ...started,
+    score: "85%",
+    currentAvailableCredit: 80
+  }, partialQuestion);
+  assert.equal(partialOverridesCeiling.status, "in_progress");
+  assert.equal(partialOverridesCeiling.reason, "question_below_full_credit");
+
+  const everyQuestionFull = determineCompletion({
+    ...started,
+    score: "95%",
+    currentAvailableCredit: 100
+  }, {
     questionCount: 3,
     attemptedCount: 3,
-    allAttempted: true
-  }).completed, true);
-  assert.deepEqual(determineCompletion(started, {
-    questionCount: 3,
-    attemptedCount: 2,
-    allAttempted: false
-  }), {
-    completed: false,
-    status: "in_progress",
-    reason: "questions_remaining",
-    scorePercent: 95,
-    questionCount: 3,
-    attemptedCount: 2
+    fullCreditCount: 3,
+    partialCreditCount: 0,
+    unansweredCount: 0,
+    allAttempted: true,
+    allFullCredit: true
   });
+  assert.equal(everyQuestionFull.completed, true);
+  assert.equal(everyQuestionFull.reason, "all_questions_full_credit");
+
   assert.equal(determineCompletion({
     score: "Not started",
     url: "https://us.prairielearn.com/pl/course_instance/1/assessment/2/"
@@ -114,7 +152,7 @@ test("builds one stable calendar event for every positive-credit window", () => 
   assert.equal(events.length, 3);
   assert.match(events[0].uid, /110pct/);
   assert.equal(events[1].uid, "pl-217654-14531169-100pct@plcalendar.local");
-  assert.equal(events[1].title, "MATH 257 · Week 1");
+  assert.equal(events[1].title, "🟡 MATH 257 · Week 1");
   assert.match(events[1].description, /Available credit: 100%/);
 });
 
@@ -126,25 +164,67 @@ test("prefixes completed events without changing their stable calendar IDs", () 
     label: "HW1",
     title: "Week 1",
     url: "https://us.prairielearn.com/pl/course_instance/217654/assessment_instance/14531169/",
-    score: "95%",
+    score: "85%",
+    currentAvailableCredit: 80,
     completion: {
       completed: true,
       status: "completed",
-      reason: "all_questions_attempted",
+      reason: "available_credit_met",
+      scorePercent: 85,
+      availableCredit: 80,
       questionCount: 4,
-      attemptedCount: 4
+      attemptedCount: 4,
+      fullCreditCount: 4,
+      partialCreditCount: 0,
+      unansweredCount: 0,
+      allAttempted: true,
+      allFullCredit: true
     },
     tiers: [{ credit: 100, rawEnd: "2026-09-02 23:59:59 (CDT)", end: "2026-09-03T04:59:59.000Z" }]
   };
   const [event] = buildCalendarEvents([assessment]);
   assert.equal(event.uid, "pl-217654-14531169-100pct@plcalendar.local");
   assert.equal(event.title, "✅ MATH 257 · Week 1");
-  assert.match(event.description, /Completion: Completed \(all questions attempted\)/);
+  assert.match(event.description, /Completion: Completed \(current available credit reached\)/);
+  assert.match(event.description, /Currently available credit: 80%/);
 
   const timed = toICS([event], new Date("2026-08-27T00:00:00Z"));
   const allDay = toICS([event], new Date("2026-08-27T00:00:00Z"), { allDay: true });
   assert.match(timed, /SUMMARY:✅ MATH 257 · Week 1/);
   assert.match(allDay, /SUMMARY:✅ MATH 257 · Week 1/);
+});
+
+test("prefixes in-progress events in both feeds without changing their IDs", () => {
+  const assessment = {
+    id: "225376-14538477",
+    courseName: "ECE 374B, fa26",
+    group: "Guided problem sets",
+    label: "GPS1",
+    title: "Regular Expressions",
+    url: "https://us.prairielearn.com/pl/course_instance/225376/assessment_instance/14538477/",
+    score: "85%",
+    currentAvailableCredit: 80,
+    completion: {
+      completed: false,
+      status: "in_progress",
+      reason: "question_below_full_credit",
+      questionCount: 19,
+      attemptedCount: 18,
+      fullCreditCount: 17,
+      partialCreditCount: 1,
+      unansweredCount: 1
+    },
+    tiers: [{ credit: 80, rawEnd: "2026-09-10 23:59:59 (CDT)", end: "2026-09-11T04:59:59.000Z" }]
+  };
+  const [event] = buildCalendarEvents([assessment]);
+  assert.equal(event.uid, "pl-225376-14538477-80pct@plcalendar.local");
+  assert.equal(event.title, "🟡 ECE 374B · Regular Expressions");
+  assert.match(event.description, /an attempted question is below full points/);
+
+  const timed = toICS([event], new Date("2026-09-01T00:00:00Z"));
+  const allDay = toICS([event], new Date("2026-09-01T00:00:00Z"), { allDay: true });
+  assert.match(timed, /SUMMARY:🟡 ECE 374B · Regular Expressions/);
+  assert.match(allDay, /SUMMARY:🟡 ECE 374B · Regular Expressions/);
 });
 
 test("writes a valid calendar with alarms and escaped text", () => {

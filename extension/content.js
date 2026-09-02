@@ -42,7 +42,7 @@
         const index = nextIndex++;
         const assessment = enriched[index];
         const baseline = assessment.completion || PLCalendarCore.determineCompletion(assessment);
-        if (baseline.completed || baseline.status === "not_started" || !assessment.url.includes("/assessment_instance/")) {
+        if (baseline.status === "not_started" || !assessment.url.includes("/assessment_instance/")) {
           enriched[index] = { ...assessment, completion: baseline };
           continue;
         }
@@ -199,7 +199,10 @@
       const result = await scanPrairieLearn();
       const time = new Date(result.scannedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
       const completedCount = result.assessments.filter((assessment) => assessment.completion?.completed).length;
-      const progress = `${completedCount} completed · ${result.events.length} credit windows`;
+      const inProgressCount = result.assessments.filter(
+        (assessment) => assessment.completion?.status === "in_progress"
+      ).length;
+      const progress = `${completedCount} completed · ${inProgressCount} in progress · ${result.events.length} credit windows`;
       if (!result.syncAttempted) {
         showRefreshBubble({
           title: "PrairieLearn automatically refreshed",

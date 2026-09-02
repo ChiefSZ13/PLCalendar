@@ -47,12 +47,31 @@ var PLCalendarCore = (() => {
       String(html || "").matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi),
       (match) => match[1]
     ).filter((row) => /href\s*=\s*["'][^"']*\/instance_question\//i.test(row));
-    const attemptedCount = questionRows.filter((row) => /(?:\?|&|&amp;)variant_id=/i.test(row)).length;
+    const questions = questionRows.map((row) => {
+      const cells = Array.from(
+        row.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi),
+        (match) => decodeHtmlText(match[1])
+      );
+      const awardedText = cells.at(-1) || "";
+      const points = awardedText.match(/^\s*(—|-|–|-?\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
+      const awarded = points && /^-?\d/.test(points[1]) ? Number(points[1]) : null;
+      const possible = points ? Number(points[2]) : null;
+      const attempted = awarded !== null;
+      const fullCredit = attempted && possible !== null && awarded + 1e-9 >= possible;
+      return { attempted, fullCredit };
+    });
+    const attemptedCount = questions.filter((question) => question.attempted).length;
+    const fullCreditCount = questions.filter((question) => question.fullCredit).length;
+    const partialCreditCount = attemptedCount - fullCreditCount;
 
     return {
-      questionCount: questionRows.length,
+      questionCount: questions.length,
       attemptedCount,
-      allAttempted: questionRows.length > 0 && attemptedCount === questionRows.length
+      fullCreditCount,
+      partialCreditCount,
+      unansweredCount: questions.length - attemptedCount,
+      allAttempted: questions.length > 0 && attemptedCount === questions.length,
+      allFullCredit: questions.length > 0 && fullCreditCount === questions.length
     };
   }
 
@@ -60,41 +79,71 @@ var PLCalendarCore = (() => {
     const scoreText = cleanText(assessment?.score);
     const scorePercent = parseScorePercent(scoreText);
     const hasInstance = /\/assessment_instance\//.test(String(assessment?.url || ""));
+    const availableCredit = Number.isFinite(assessment?.currentAvailableCredit)
+      ? assessment.currentAvailableCredit
+      : null;
     const progress = questionProgress && Number.isInteger(questionProgress.questionCount)
       ? questionProgress
       : null;
+    const hasQuestionData = progress?.questionCount > 0;
 
     if (/not started/i.test(scoreText) || (!hasInstance && scorePercent === null)) {
-      return { completed: false, status: "not_started", reason: "not_started", scorePercent };
+      return {
+        completed: false,
+        status: "not_started",
+        reason: "not_started",
+        scorePercent,
+        availableCredit
+      };
     }
-    if (scorePercent !== null && scorePercent >= 100) {
-      return { completed: true, status: "completed", reason: "full_credit", scorePercent };
+    if (progress?.partialCreditCount > 0) {
+      return {
+        completed: false,
+        status: "in_progress",
+        reason: "question_below_full_credit",
+        scorePercent,
+        availableCredit,
+        ...progress
+      };
     }
-    if (progress?.allAttempted) {
+    if (hasQuestionData && scorePercent !== null && availableCredit !== null
+        && scorePercent + 1e-9 >= availableCredit) {
       return {
         completed: true,
         status: "completed",
-        reason: "all_questions_attempted",
+        reason: "available_credit_met",
         scorePercent,
-        questionCount: progress.questionCount,
-        attemptedCount: progress.attemptedCount
+        availableCredit,
+        ...(progress || {})
+      };
+    }
+    if (progress?.allFullCredit) {
+      return {
+        completed: true,
+        status: "completed",
+        reason: "all_questions_full_credit",
+        scorePercent,
+        availableCredit,
+        ...progress
       };
     }
 
     return {
       completed: false,
       status: hasInstance ? "in_progress" : "unknown",
-      reason: hasInstance ? "questions_remaining" : "unknown",
+      reason: hasInstance && scorePercent !== null && availableCredit !== null && scorePercent < availableCredit
+        ? "below_available_credit"
+        : hasInstance ? "questions_remaining" : "unknown",
       scorePercent,
-      ...(progress ? {
-        questionCount: progress.questionCount,
-        attemptedCount: progress.attemptedCount
-      } : {})
+      availableCredit,
+      ...(progress || {})
     };
   }
 
   function decodeHtmlText(value) {
-    const entities = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+    const entities = {
+      amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", mdash: "—", ndash: "–"
+    };
     return cleanText(String(value || "")
       .replace(/<[^>]*>/g, " ")
       .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (_match, entity) => {
@@ -175,6 +224,7 @@ var PLCalendarCore = (() => {
           title: cleanText(link.textContent),
           url,
           score: cleanText(cells[3].textContent),
+          currentAvailableCredit: parseCredit(cells[2].textContent),
           tiers,
           primaryDeadline: pickPrimaryDeadline(tiers)
         };
@@ -196,22 +246,28 @@ var PLCalendarCore = (() => {
     const completion = assessment.completion || determineCompletion(assessment);
     let completionText = "";
     if (completion.completed) {
-      completionText = completion.reason === "all_questions_attempted"
-        ? "Completion: Completed (all questions attempted)"
-        : "Completion: Completed (full credit earned)";
+      completionText = completion.reason === "all_questions_full_credit"
+        ? "Completion: Completed (every question has full points)"
+        : "Completion: Completed (current available credit reached)";
     } else if (completion.status === "in_progress") {
-      const progress = Number.isInteger(completion.questionCount)
-        ? ` (${completion.attemptedCount}/${completion.questionCount} questions attempted)`
-        : "";
-      completionText = `Completion: In progress${progress}`;
+      completionText = completion.reason === "question_below_full_credit"
+        ? "Completion: In progress (an attempted question is below full points)"
+        : "Completion: In progress";
     } else if (completion.status === "not_started") {
       completionText = "Completion: Not started";
     }
+    const questionProgress = Number.isInteger(completion.questionCount)
+      ? `Question progress: ${completion.fullCreditCount}/${completion.questionCount} at full points; ${completion.attemptedCount} attempted`
+      : "";
     const details = [
       `${assessment.courseName} · ${assessment.group || "Assessment"}`,
       assessment.label ? `PrairieLearn label: ${assessment.label}` : "",
       completionText,
+      questionProgress,
       assessment.score ? `Status/score at last scan: ${assessment.score}` : "",
+      Number.isFinite(assessment.currentAvailableCredit)
+        ? `Currently available credit: ${assessment.currentAvailableCredit}%`
+        : "",
       `Open: ${assessment.url}`
     ];
     return details.filter(Boolean).join("\n");
@@ -227,6 +283,9 @@ var PLCalendarCore = (() => {
     for (const assessment of assessments) {
       const completion = assessment.completion || determineCompletion(assessment);
       const baseTitle = `${courseCode(assessment.courseName)} · ${assessment.title}`;
+      const statusPrefix = completion.completed
+        ? "✅ "
+        : completion.status === "in_progress" ? "🟡 " : "";
       const seen = new Set();
       for (const tier of assessment.tiers || []) {
         const identity = `${tier.credit}|${tier.end}`;
@@ -235,7 +294,7 @@ var PLCalendarCore = (() => {
         const tierMs = new Date(tier.end).getTime();
         events.push({
           uid: `pl-${assessment.id}-${String(tier.credit).replace(".", "_")}pct@plcalendar.local`,
-          title: completion.completed ? `✅ ${baseTitle}` : baseTitle,
+          title: `${statusPrefix}${baseTitle}`,
           start: tier.end,
           end: new Date(tierMs + 15 * 60 * 1000).toISOString(),
           allDayDate: tier.rawEnd?.match(/^\d{4}-\d{2}-\d{2}/)?.[0] || null,
@@ -246,7 +305,8 @@ var PLCalendarCore = (() => {
             eventDescription(assessment)
           ].join("\n"),
           category: assessment.group || "PrairieLearn",
-          completed: completion.completed
+          completed: completion.completed,
+          status: completion.status
         });
       }
     }
