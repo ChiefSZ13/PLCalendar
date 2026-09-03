@@ -7,9 +7,16 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== "scan-reminder") return;
-  const tabs = await chrome.tabs.query({ url: "https://us.prairielearn.com/*" });
-  const tab = tabs.find((candidate) => candidate.id);
-  if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: "SCAN" }).catch(() => {});
+  const sourcePatterns = [
+    "https://us.prairielearn.com/*",
+    "https://www.gradescope.com/*",
+    "https://gradescope.com/*"
+  ];
+  for (const pattern of sourcePatterns) {
+    const tabs = await chrome.tabs.query({ url: pattern });
+    const tab = tabs.find((candidate) => candidate.id);
+    if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: "SCAN" }).catch(() => {});
+  }
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -30,7 +37,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message?.type === "DOWNLOAD_ICS") {
     const url = `data:text/calendar;charset=utf-8,${encodeURIComponent(message.ics)}`;
-    chrome.downloads.download({ url, filename: "prairielearn-deadlines.ics", saveAs: true }).then(
+    chrome.downloads.download({
+      url,
+      filename: message.filename || "course-deadlines.ics",
+      saveAs: true
+    }).then(
       (downloadId) => sendResponse({ ok: true, downloadId }),
       (error) => sendResponse({ ok: false, error: error.message })
     );

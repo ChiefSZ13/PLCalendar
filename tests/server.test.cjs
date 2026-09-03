@@ -104,4 +104,41 @@ test("protects remote writes and calendar feeds with separate tokens", async (co
   const allDayFeed = await fetch(`${baseUrl}/feeds/${feedToken}/calendar-all-day.ics`);
   assert.equal(allDayFeed.status, 200);
   assert.match(await allDayFeed.text(), /DTSTART;VALUE=DATE:20260903/);
+
+  const gradescopeSnapshot = {
+    scannedAt: "2026-09-02T12:00:00.000Z",
+    courseCount: 1,
+    events: [{
+      uid: "gradescope-1378863-8528340@plcalendar.local",
+      title: "STAT 400 · Homework 01",
+      start: "2026-09-09T04:59:00.000Z",
+      end: "2026-09-09T05:14:00.000Z",
+      allDayDate: "2026-09-08",
+      description: "Gradescope status: No Submission",
+      url: "https://www.gradescope.com/courses/1378863/assignments/8528340",
+      category: "Gradescope"
+    }]
+  };
+  const gradescopeWrite = await fetch(`${baseUrl}/api/gradescope/events`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${writeToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(gradescopeSnapshot)
+  });
+  assert.equal(gradescopeWrite.status, 200);
+  assert.equal((await gradescopeWrite.json()).source, "gradescope");
+
+  const gradescopeTimed = await fetch(`${baseUrl}/feeds/${feedToken}/gradescope.ics`);
+  assert.equal(gradescopeTimed.status, 200);
+  assert.match(await gradescopeTimed.text(), /X-WR-CALNAME:Gradescope Deadlines/);
+  const gradescopeAllDay = await fetch(`${baseUrl}/feeds/${feedToken}/gradescope-all-day.ics`);
+  assert.equal(gradescopeAllDay.status, 200);
+  assert.match(await gradescopeAllDay.text(), /DTSTART;VALUE=DATE:20260908/);
+
+  const health = await fetch(`${baseUrl}/health`).then((response) => response.json());
+  assert.equal(health.sources.prairieLearn.eventCount, 1);
+  assert.equal(health.sources.gradescope.eventCount, 1);
+  assert.equal(health.eventCount, 2);
 });

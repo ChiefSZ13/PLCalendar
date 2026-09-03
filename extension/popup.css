@@ -6,11 +6,8 @@
 }
 
 * { box-sizing: border-box; }
-
-body { margin: 0; min-width: 360px; }
-
-main { padding: 18px; }
-
+body { margin: 0; min-width: 420px; }
+main { max-height: 600px; overflow-y: auto; padding: 18px; }
 header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 
 .mark {
@@ -28,22 +25,35 @@ header p { color: #667085; margin: 3px 0 0; }
   margin-bottom: 12px; border: 1px solid #dbe2ea; border-radius: 12px;
   background: white;
 }
-
 .status span { color: #667085; font-size: 12px; }
 
 button {
   width: 100%; margin-top: 8px; padding: 10px 12px; border: 1px solid #ccd5df;
   border-radius: 9px; color: #263445; background: white; font-weight: 650; cursor: pointer;
 }
-
 button.primary { color: white; border-color: #0f766e; background: #0f766e; }
 button:disabled { cursor: wait; opacity: .6; }
 
+.source-settings { display: grid; gap: 10px; margin-top: 14px; }
+.source-card { padding: 12px; border: 1px solid #dbe2ea; border-radius: 12px; background: white; }
+.toggle { display: flex; align-items: center; gap: 8px; }
+.toggle input { flex: 0 0 auto; accent-color: #0f766e; }
+.source-toggle { align-items: flex-start; }
+.source-toggle span { display: flex; flex-direction: column; }
+.source-toggle small { margin-top: 1px; color: #667085; font-size: 11px; font-weight: 400; }
+
+.course-list { display: grid; gap: 5px; max-height: 150px; overflow-y: auto; margin-top: 9px; padding-top: 8px; border-top: 1px solid #edf1f5; }
+.course-list:empty::after { content: "No courses discovered yet"; color: #8993a1; font-size: 11px; }
+.course-choice { display: grid; grid-template-columns: 16px 1fr; gap: 7px; align-items: start; font-size: 12px; }
+.course-choice input { margin: 2px 0 0; accent-color: #0f766e; }
+.course-choice span { min-width: 0; overflow-wrap: anywhere; }
+.course-choice small { display: block; color: #8993a1; }
+
+.downloads { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 3px; }
+.downloads button { padding-inline: 8px; font-size: 12px; }
+
 .settings { display: grid; gap: 9px; margin-top: 17px; padding-top: 15px; border-top: 1px solid #dbe2ea; }
 .settings > label:not(.toggle) { color: #667085; font-size: 12px; }
-.toggle { display: flex; align-items: center; gap: 8px; }
-.toggle input { accent-color: #0f766e; }
-
 input[type="url"], input[type="password"] {
   width: 100%; padding: 8px; border: 1px solid #ccd5df; border-radius: 8px;
   color: #344054; background: white; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;

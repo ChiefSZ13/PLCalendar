@@ -16,11 +16,11 @@
       chrome.storage.sync.get("settings"),
       chrome.storage.local.get("connection")
     ]);
-    return {
+    return PLCalendarCore.normalizeSettings({
       ...PLCalendarCore.DEFAULT_SETTINGS,
       ...(settings || {}),
       writeToken: connection?.writeToken || ""
-    };
+    });
   }
 
   function samePage(first, second) {
@@ -73,25 +73,32 @@
 
   async function performScan() {
     const homepage = location.pathname === "/" ? document : await fetchDocument("https://us.prairielearn.com/");
-    const courseUrls = PLCalendarCore.findCourseUrls(homepage, "https://us.prairielearn.com/");
-    if (!courseUrls.length) throw new Error("No PrairieLearn courses were found. Make sure you are signed in.");
+    const courses = PLCalendarCore.parsePrairieLearnCourses(homepage, "https://us.prairielearn.com/");
+    if (!courses.length) throw new Error("No PrairieLearn courses were found. Make sure you are signed in.");
+    const settings = await loadSettings();
+    const selectedCourses = settings.enabledSources.prairieLearn
+      ? courses.filter((course) => PLCalendarCore.isCourseSelected(settings, "prairieLearn", course.id))
+      : [];
 
-    const results = await Promise.allSettled(courseUrls.map(async (url) => {
-      const courseDocument = location.href.replace(/\/$/, "") === url.replace(/\/$/, "")
+    const results = await Promise.allSettled(selectedCourses.map(async (course) => {
+      const courseDocument = location.href.replace(/\/$/, "") === course.url.replace(/\/$/, "")
         ? document
-        : await fetchDocument(url);
-      return PLCalendarCore.parseCourseDocument(courseDocument, url);
+        : await fetchDocument(course.url);
+      return PLCalendarCore.parseCourseDocument(courseDocument, course.url);
     }));
 
     const parsedAssessments = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
     const completionScan = await enrichAssessmentCompletions(parsedAssessments);
     const assessments = completionScan.assessments;
     const failedCourses = results.filter((result) => result.status === "rejected").length;
-    const settings = await loadSettings();
     const events = PLCalendarCore.buildCalendarEvents(assessments, settings);
     const snapshot = {
+      source: "prairieLearn",
       scannedAt: new Date().toISOString(),
-      courseCount: courseUrls.length,
+      enabled: settings.enabledSources.prairieLearn,
+      courses,
+      courseCount: selectedCourses.length,
+      discoveredCourseCount: courses.length,
       failedCourses,
       failedCompletionChecks: completionScan.failedChecks,
       assessments,
@@ -103,7 +110,7 @@
     if (settings.autoSync) {
       sync = await chrome.runtime.sendMessage({
         type: "SYNC_LOCAL",
-        endpoint: settings.syncEndpoint,
+        endpoint: PLCalendarCore.sourceSyncEndpoint(settings.syncEndpoint, "prairieLearn"),
         writeToken: settings.writeToken,
         snapshot
       });
@@ -203,7 +210,13 @@
         (assessment) => assessment.completion?.status === "in_progress"
       ).length;
       const progress = `${completedCount} completed · ${inProgressCount} in progress · ${result.events.length} credit windows`;
-      if (!result.syncAttempted) {
+      if (!result.enabled) {
+        showRefreshBubble({
+          title: "PrairieLearn monitoring is off",
+          detail: `${result.discoveredCourseCount} courses available in extension settings`,
+          tone: "warning"
+        });
+      } else if (!result.syncAttempted) {
         showRefreshBubble({
           title: "PrairieLearn automatically refreshed",
           detail: `${progress} · calendar sync is off`,

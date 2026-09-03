@@ -7,9 +7,30 @@ const {
   parseQuestionProgressHtml,
   parsePrairieDate,
   parseScorePercent,
+  normalizeSettings,
   pickPrimaryDeadline,
+  sourceSyncEndpoint,
   toICS
 } = require("../extension/core.js");
+
+test("normalizes persisted source and course-selection settings", () => {
+  const defaults = normalizeSettings();
+  assert.deepEqual(defaults.enabledSources, { prairieLearn: true, gradescope: false });
+  assert.equal(defaults.selectedCourseIds.prairieLearn, null);
+  assert.deepEqual(defaults.selectedCourseIds.gradescope, []);
+
+  const customized = normalizeSettings({
+    enabledSources: { gradescope: true },
+    selectedCourseIds: { prairieLearn: [217654], gradescope: ["1378863", "1378863"] }
+  });
+  assert.deepEqual(customized.enabledSources, { prairieLearn: true, gradescope: true });
+  assert.deepEqual(customized.selectedCourseIds.prairieLearn, ["217654"]);
+  assert.deepEqual(customized.selectedCourseIds.gradescope, ["1378863"]);
+  assert.equal(
+    sourceSyncEndpoint("https://calendar.example/api/events", "gradescope"),
+    "https://calendar.example/api/gradescope/events"
+  );
+});
 
 test("parses PrairieLearn timestamps with offsets and timezone abbreviations", () => {
   assert.equal(parsePrairieDate("2026-09-11 23:59:59-05 (CDT)"), "2026-09-12T04:59:59.000Z");

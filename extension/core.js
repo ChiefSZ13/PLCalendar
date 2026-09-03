@@ -4,8 +4,47 @@ var PLCalendarCore = (() => {
 
   const DEFAULT_SETTINGS = Object.freeze({
     autoSync: true,
-    syncEndpoint: "http://127.0.0.1:49321/api/events"
+    syncEndpoint: "http://127.0.0.1:49321/api/events",
+    enabledSources: Object.freeze({ prairieLearn: true, gradescope: false }),
+    selectedCourseIds: Object.freeze({ prairieLearn: null, gradescope: Object.freeze([]) })
   });
+
+  function normalizeSettings(settings = {}) {
+    const prairieLearnSelection = settings.selectedCourseIds?.prairieLearn;
+    const gradescopeSelection = settings.selectedCourseIds?.gradescope;
+    return {
+      ...DEFAULT_SETTINGS,
+      ...settings,
+      enabledSources: {
+        ...DEFAULT_SETTINGS.enabledSources,
+        ...(settings.enabledSources || {})
+      },
+      selectedCourseIds: {
+        prairieLearn: Array.isArray(prairieLearnSelection)
+          ? Array.from(new Set(prairieLearnSelection.map(String)))
+          : null,
+        gradescope: Array.isArray(gradescopeSelection)
+          ? Array.from(new Set(gradescopeSelection.map(String)))
+          : []
+      }
+    };
+  }
+
+  function isCourseSelected(settings, source, courseId) {
+    const normalized = normalizeSettings(settings);
+    const selected = normalized.selectedCourseIds[source];
+    return selected === null || selected.includes(String(courseId));
+  }
+
+  function sourceSyncEndpoint(endpoint, source) {
+    const url = new URL(endpoint || DEFAULT_SETTINGS.syncEndpoint);
+    if (source === "gradescope") {
+      url.pathname = /\/api\/events\/?$/.test(url.pathname)
+        ? url.pathname.replace(/\/api\/events\/?$/, "/api/gradescope/events")
+        : "/api/gradescope/events";
+    }
+    return url.href;
+  }
 
   function cleanText(value) {
     return String(value || "").replace(/\s+/g, " ").trim();
@@ -235,11 +274,20 @@ var PLCalendarCore = (() => {
     return assessments;
   }
 
+  function parsePrairieLearnCourses(documentRef, baseUrl) {
+    const courses = Array.from(documentRef.querySelectorAll('a[href^="/pl/course_instance/"]'))
+      .map((link) => {
+        const url = new URL(link.getAttribute("href"), baseUrl).href;
+        const id = url.match(/\/course_instance\/(\d+)\/?$/)?.[1];
+        return id ? { id, name: cleanText(link.textContent), url } : null;
+      })
+      .filter(Boolean)
+      .filter((course, index, all) => all.findIndex((item) => item.id === course.id) === index);
+    return courses;
+  }
+
   function findCourseUrls(documentRef, baseUrl) {
-    return Array.from(documentRef.querySelectorAll('a[href^="/pl/course_instance/"]'))
-      .map((link) => new URL(link.getAttribute("href"), baseUrl).href)
-      .filter((url) => /^https:\/\/us\.prairielearn\.com\/pl\/course_instance\/\d+\/?$/.test(url))
-      .filter((url, index, all) => all.indexOf(url) === index);
+    return parsePrairieLearnCourses(documentRef, baseUrl).map((course) => course.url);
   }
 
   function eventDescription(assessment) {
@@ -420,12 +468,16 @@ var PLCalendarCore = (() => {
     cleanText,
     determineCompletion,
     findCourseUrls,
+    isCourseSelected,
+    normalizeSettings,
     parseAccessDetailsHtml,
     parseCourseDocument,
+    parsePrairieLearnCourses,
     parseQuestionProgressHtml,
     parsePrairieDate,
     parseScorePercent,
     pickPrimaryDeadline,
+    sourceSyncEndpoint,
     toICS
   };
 })();

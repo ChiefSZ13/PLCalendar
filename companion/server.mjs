@@ -9,7 +9,22 @@ const require = createRequire(import.meta.url);
 const { toICS } = require("../extension/core.js");
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dataDirectory = path.resolve(process.env.PLCALENDAR_DATA_DIR || path.join(projectRoot, "data"));
-const eventsPath = path.join(dataDirectory, "events.json");
+const sourceConfig = Object.freeze({
+  prairieLearn: {
+    eventsPath: path.join(dataDirectory, "events.json"),
+    apiPath: "/api/events",
+    timedFilename: "calendar.ics",
+    allDayFilename: "calendar-all-day.ics",
+    calendarName: "PrairieLearn Deadlines"
+  },
+  gradescope: {
+    eventsPath: path.join(dataDirectory, "gradescope-events.json"),
+    apiPath: "/api/gradescope/events",
+    timedFilename: "gradescope.ics",
+    allDayFilename: "gradescope-all-day.ics",
+    calendarName: "Gradescope Deadlines"
+  }
+});
 const port = Number(process.env.PLCALENDAR_PORT || 49321);
 const host = process.env.PLCALENDAR_HOST || "127.0.0.1";
 const writeToken = process.env.PLCALENDAR_WRITE_TOKEN?.trim() || "";
@@ -24,7 +39,8 @@ await mkdir(dataDirectory, { recursive: true });
 
 function permittedOrigin(origin) {
   if (!origin) return null;
-  if (origin === "https://us.prairielearn.com" || origin.startsWith("chrome-extension://")) return origin;
+  if (["https://us.prairielearn.com", "https://www.gradescope.com", "https://gradescope.com"].includes(origin)
+      || origin.startsWith("chrome-extension://")) return origin;
   return null;
 }
 
@@ -58,22 +74,34 @@ function bearerToken(request) {
   return match?.[1]?.trim() || "";
 }
 
-function calendarKind(pathname) {
-  const legacy = pathname.match(/^\/(calendar(?:-all-day)?\.ics)$/);
-  if (legacy && !feedToken) return legacy[1] === "calendar-all-day.ics" ? "all-day" : "timed";
+function feedDefinition(filename) {
+  for (const [source, config] of Object.entries(sourceConfig)) {
+    if (filename === config.timedFilename) return { source, allDay: false, filename, config };
+    if (filename === config.allDayFilename) return { source, allDay: true, filename, config };
+  }
+  return null;
+}
 
-  const protectedFeed = pathname.match(/^\/feeds\/([^/]+)\/(calendar(?:-all-day)?\.ics)$/);
+function calendarKind(pathname) {
+  const legacy = pathname.match(/^\/([^/]+\.ics)$/);
+  if (legacy && !feedToken) return feedDefinition(legacy[1]);
+
+  const protectedFeed = pathname.match(/^\/feeds\/([^/]+)\/([^/]+\.ics)$/);
   if (!protectedFeed || !tokenMatches(decodeURIComponent(protectedFeed[1]), feedToken)) return null;
-  return protectedFeed[2] === "calendar-all-day.ics" ? "all-day" : "timed";
+  return feedDefinition(protectedFeed[2]);
 }
 
 function feedPath(filename) {
   return feedToken ? `/feeds/FEED_TOKEN/${filename}` : `/${filename}`;
 }
 
-async function readSnapshot() {
+function latestTimestamp(...values) {
+  return values.filter(Boolean).sort().at(-1) || null;
+}
+
+async function readSnapshot(source = "prairieLearn") {
   try {
-    const parsed = JSON.parse(await readFile(eventsPath, "utf8"));
+    const parsed = JSON.parse(await readFile(sourceConfig[source].eventsPath, "utf8"));
     return parsed && Array.isArray(parsed.events) ? parsed : { events: [] };
   } catch (error) {
     if (error.code === "ENOENT") return { events: [] };
@@ -92,11 +120,11 @@ async function readBody(request) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-async function writeSnapshot(snapshot) {
-  const temporaryPath = path.join(dataDirectory, `events-${crypto.randomUUID()}.json.next`);
+async function writeSnapshot(source, snapshot) {
+  const temporaryPath = path.join(dataDirectory, `${source}-events-${crypto.randomUUID()}.json.next`);
   try {
     await writeFile(temporaryPath, JSON.stringify(snapshot, null, 2), { encoding: "utf8", mode: 0o600 });
-    await rename(temporaryPath, eventsPath);
+    await rename(temporaryPath, sourceConfig[source].eventsPath);
   } catch (error) {
     await unlink(temporaryPath).catch(() => {});
     throw error;
@@ -118,7 +146,9 @@ const server = http.createServer(async (request, response) => {
   }
 
   try {
-    if (request.method === "POST" && url.pathname === "/api/events") {
+    const uploadSource = Object.entries(sourceConfig)
+      .find(([, config]) => config.apiPath === url.pathname)?.[0];
+    if (request.method === "POST" && uploadSource) {
       if (request.headers.origin && !permittedOrigin(request.headers.origin)) {
         sendJson(response, 403, { ok: false, error: "Origin is not permitted" });
         return;
@@ -136,51 +166,62 @@ const server = http.createServer(async (request, response) => {
         return;
       }
       const stored = {
+        source: uploadSource,
         scannedAt: snapshot.scannedAt || new Date().toISOString(),
         courseCount: Number(snapshot.courseCount || 0),
         events: snapshot.events
       };
-      await writeSnapshot(stored);
-      sendJson(response, 200, { ok: true, eventCount: stored.events.length, updatedAt: stored.scannedAt });
+      await writeSnapshot(uploadSource, stored);
+      sendJson(response, 200, {
+        ok: true,
+        source: uploadSource,
+        eventCount: stored.events.length,
+        updatedAt: stored.scannedAt
+      });
       return;
     }
 
     const kind = request.method === "GET" ? calendarKind(url.pathname) : null;
     if (kind) {
-      const snapshot = await readSnapshot();
-      const allDay = kind === "all-day";
+      const snapshot = await readSnapshot(kind.source);
       response.writeHead(200, {
         "Content-Type": "text/calendar; charset=utf-8",
-        "Content-Disposition": `inline; filename="prairielearn-deadlines${allDay ? "-all-day" : ""}.ics"`,
+        "Content-Disposition": `inline; filename="${kind.filename}"`,
         "Cache-Control": "no-cache, no-store, must-revalidate",
         "X-Content-Type-Options": "nosniff"
       });
-      response.end(toICS(snapshot.events, new Date(), allDay ? {
+      response.end(toICS(snapshot.events, new Date(), kind.allDay ? {
         allDay: true,
-        calendarName: "PrairieLearn Deadlines (All Day)"
-      } : {}));
+        calendarName: `${kind.config.calendarName} (All Day)`
+      } : { calendarName: kind.config.calendarName }));
       return;
     }
 
     if (request.method === "GET" && url.pathname === "/health") {
-      const snapshot = await readSnapshot();
+      const prairieLearn = await readSnapshot("prairieLearn");
+      const gradescope = await readSnapshot("gradescope");
       sendJson(response, 200, {
         ok: true,
-        eventCount: snapshot.events.length,
-        updatedAt: snapshot.scannedAt || null
+        eventCount: prairieLearn.events.length + gradescope.events.length,
+        updatedAt: latestTimestamp(prairieLearn.scannedAt, gradescope.scannedAt),
+        sources: {
+          prairieLearn: { eventCount: prairieLearn.events.length, updatedAt: prairieLearn.scannedAt || null },
+          gradescope: { eventCount: gradescope.events.length, updatedAt: gradescope.scannedAt || null }
+        }
       });
       return;
     }
 
     if (request.method === "GET" && url.pathname === "/") {
-      const snapshot = await readSnapshot();
+      const prairieLearn = await readSnapshot("prairieLearn");
+      const gradescope = await readSnapshot("gradescope");
       const base = publicBaseUrl || `http://${host}:${port}`;
       response.writeHead(200, {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff"
       });
-      response.end(`<!doctype html><meta charset="utf-8"><title>PrairieLearn Calendar</title><style>body{font:16px -apple-system,sans-serif;max-width:680px;margin:64px auto;padding:0 24px;color:#18303a}code{background:#eef5f4;padding:3px 6px;border-radius:5px}</style><h1>PrairieLearn Calendar is running</h1><p>${snapshot.events.length} calendar events are available.</p><p>Timed feed: <code>${base}${feedPath("calendar.ics")}</code></p><p>All-day feed: <code>${base}${feedPath("calendar-all-day.ics")}</code></p>`);
+      response.end(`<!doctype html><meta charset="utf-8"><title>Course Deadline Calendar</title><style>body{font:16px -apple-system,sans-serif;max-width:760px;margin:64px auto;padding:0 24px;color:#18303a}code{background:#eef5f4;padding:3px 6px;border-radius:5px}</style><h1>Course Deadline Calendar is running</h1><h2>PrairieLearn (${prairieLearn.events.length} events)</h2><p>Timed feed: <code>${base}${feedPath("calendar.ics")}</code></p><p>All-day feed: <code>${base}${feedPath("calendar-all-day.ics")}</code></p><h2>Gradescope (${gradescope.events.length} events)</h2><p>Timed feed: <code>${base}${feedPath("gradescope.ics")}</code></p><p>All-day feed: <code>${base}${feedPath("gradescope-all-day.ics")}</code></p>`);
       return;
     }
 
@@ -193,9 +234,11 @@ const server = http.createServer(async (request, response) => {
 
 server.listen(port, host, () => {
   const base = publicBaseUrl || `http://${host}:${port}`;
-  console.log(`PrairieLearn Calendar companion: ${base}/`);
-  console.log(`Timed calendar feed: ${base}${feedPath("calendar.ics")}`);
-  console.log(`All-day calendar feed: ${base}${feedPath("calendar-all-day.ics")}`);
+  console.log(`Course Deadline Calendar companion: ${base}/`);
+  console.log(`PrairieLearn timed feed: ${base}${feedPath("calendar.ics")}`);
+  console.log(`PrairieLearn all-day feed: ${base}${feedPath("calendar-all-day.ics")}`);
+  console.log(`Gradescope timed feed: ${base}${feedPath("gradescope.ics")}`);
+  console.log(`Gradescope all-day feed: ${base}${feedPath("gradescope-all-day.ics")}`);
   if (!writeToken) console.warn("Warning: PLCALENDAR_WRITE_TOKEN is not set; uploads are unauthenticated.");
   if (!feedToken) console.warn("Warning: PLCALENDAR_FEED_TOKEN is not set; calendar feeds are public.");
 });

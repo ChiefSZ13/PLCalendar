@@ -1,7 +1,7 @@
 FROM node:22-alpine
 
-LABEL org.opencontainers.image.title="PrairieLearn Calendar"
-LABEL org.opencontainers.image.description="Private PrairieLearn-to-ICS calendar companion"
+LABEL org.opencontainers.image.title="Course Deadline Calendar"
+LABEL org.opencontainers.image.description="Private PrairieLearn and Gradescope calendar companion"
 LABEL org.opencontainers.image.source="https://github.com/ChiefSZ13/PLCalendar"
 
 WORKDIR /app

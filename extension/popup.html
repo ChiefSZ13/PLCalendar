@@ -3,31 +3,53 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>PrairieLearn Calendar</title>
+    <title>Course Deadline Calendar</title>
     <link rel="stylesheet" href="popup.css">
   </head>
   <body>
     <main>
       <header>
-        <div class="mark">PL</div>
+        <div class="mark">DC</div>
         <div>
-          <h1>Deadline sync</h1>
-          <p>PrairieLearn → Apple Calendar</p>
+          <h1>Deadline calendar</h1>
+          <p>PrairieLearn + Gradescope</p>
         </div>
       </header>
 
       <section class="status" aria-live="polite">
-        <strong id="status-title">Ready to scan</strong>
-        <span id="status-detail">Open PrairieLearn, then scan your courses.</span>
+        <strong id="status-title">Ready</strong>
+        <span id="status-detail">Choose sources and courses, then scan.</span>
       </section>
 
-      <button id="scan" class="primary">Scan PrairieLearn</button>
-      <button id="download">Download .ics snapshot</button>
+      <button id="scan" class="primary">Scan selected courses</button>
+
+      <section class="source-settings" aria-label="Monitored courses">
+        <article class="source-card">
+          <label class="toggle source-toggle">
+            <input id="monitor-prairielearn" type="checkbox">
+            <span><strong>PrairieLearn</strong><small id="prairielearn-summary">No scan yet</small></span>
+          </label>
+          <div id="prairielearn-courses" class="course-list"></div>
+        </article>
+
+        <article class="source-card">
+          <label class="toggle source-toggle">
+            <input id="monitor-gradescope" type="checkbox">
+            <span><strong>Gradescope</strong><small id="gradescope-summary">Open Gradescope once to discover courses</small></span>
+          </label>
+          <div id="gradescope-courses" class="course-list"></div>
+        </article>
+      </section>
+
+      <section class="downloads">
+        <button id="download-prairielearn">Download PrairieLearn .ics</button>
+        <button id="download-gradescope">Download Gradescope .ics</button>
+      </section>
 
       <section class="settings">
         <label class="toggle">
           <input id="auto-sync" type="checkbox">
-          <span>Sync to Apple Calendar feed</span>
+          <span>Sync snapshots to calendar server</span>
         </label>
         <label for="endpoint">Calendar server endpoint</label>
         <input id="endpoint" type="url" spellcheck="false">
@@ -36,9 +58,7 @@
         <button id="save-connection" type="button">Save connection</button>
       </section>
 
-      <footer>
-        <span id="feed-state">Calendar connection ready</span>
-      </footer>
+      <footer><span id="feed-state">Settings are stored in this browser profile</span></footer>
     </main>
     <script src="core.js"></script>
     <script src="popup.js"></script>

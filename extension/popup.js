@@ -1,9 +1,33 @@
 /* global chrome, PLCalendarCore */
 "use strict";
 
+const SOURCE_META = Object.freeze({
+  prairieLearn: {
+    label: "PrairieLearn",
+    patterns: ["https://us.prairielearn.com/*"],
+    snapshotKey: "snapshot",
+    coursesElement: "#prairielearn-courses",
+    summaryElement: "#prairielearn-summary"
+  },
+  gradescope: {
+    label: "Gradescope",
+    patterns: ["https://www.gradescope.com/*", "https://gradescope.com/*"],
+    snapshotKey: "gradescopeSnapshot",
+    coursesElement: "#gradescope-courses",
+    summaryElement: "#gradescope-summary"
+  }
+});
+
 const elements = {
   scan: document.querySelector("#scan"),
-  download: document.querySelector("#download"),
+  downloads: {
+    prairieLearn: document.querySelector("#download-prairielearn"),
+    gradescope: document.querySelector("#download-gradescope")
+  },
+  sourceToggles: {
+    prairieLearn: document.querySelector("#monitor-prairielearn"),
+    gradescope: document.querySelector("#monitor-gradescope")
+  },
   autoSync: document.querySelector("#auto-sync"),
   endpoint: document.querySelector("#endpoint"),
   writeToken: document.querySelector("#write-token"),
@@ -13,34 +37,100 @@ const elements = {
   feedState: document.querySelector("#feed-state")
 };
 
+let currentSettings = PLCalendarCore.normalizeSettings();
+let snapshots = { prairieLearn: null, gradescope: null };
+
 function showStatus(title, detail, isError = false) {
   elements.title.textContent = title;
   elements.detail.textContent = detail;
   elements.title.style.color = isError ? "#b42318" : "";
 }
 
-function renderSnapshot(snapshot) {
-  if (!snapshot) return;
-  const deadlineCount = snapshot.events.length;
-  const missing = snapshot.assessments.filter((item) => !item.tiers.some((tier) => tier.end && tier.credit > 0)).length;
+function selectedIdsFromUi(source) {
+  return Array.from(document.querySelectorAll(`[data-course-source="${source}"]`))
+    .filter((input) => input.checked)
+    .map((input) => input.value);
+}
+
+function renderCourses(source) {
+  const meta = SOURCE_META[source];
+  const container = document.querySelector(meta.coursesElement);
+  const courses = snapshots[source]?.courses || [];
+  const selection = currentSettings.selectedCourseIds[source];
+  container.replaceChildren();
+
+  for (const course of courses) {
+    const label = document.createElement("label");
+    label.className = "course-choice";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = String(course.id);
+    checkbox.dataset.courseSource = source;
+    checkbox.checked = selection === null || selection.includes(String(course.id));
+    const copy = document.createElement("span");
+    copy.textContent = course.name;
+    if (Number.isInteger(course.assignmentCount)) {
+      const count = document.createElement("small");
+      count.textContent = `${course.assignmentCount} assignment${course.assignmentCount === 1 ? "" : "s"}`;
+      copy.append(count);
+    }
+    label.append(checkbox, copy);
+    container.append(label);
+  }
+}
+
+function renderSummaries() {
+  for (const [source, meta] of Object.entries(SOURCE_META)) {
+    const snapshot = snapshots[source];
+    const courses = snapshot?.courses || [];
+    const selection = currentSettings.selectedCourseIds[source];
+    const selectedCount = selection === null
+      ? (courses.length || snapshot?.courseCount || 0)
+      : selection.length;
+    const eventCount = snapshot?.events?.length ?? 0;
+    document.querySelector(meta.summaryElement).textContent = snapshot
+      ? currentSettings.enabledSources[source]
+        ? `${selectedCount} selected · ${eventCount} event${eventCount === 1 ? "" : "s"}`
+        : `${selectedCount} selected · monitoring off`
+      : source === "gradescope" ? "Open Gradescope once to discover courses" : "No scan yet";
+    elements.downloads[source].disabled = !eventCount;
+  }
+  const totalEvents = Object.entries(snapshots).reduce((sum, [source, snapshot]) => (
+    sum + (currentSettings.enabledSources[source] ? snapshot?.events?.length || 0 : 0)
+  ), 0);
+  const latest = Object.values(snapshots)
+    .map((snapshot) => snapshot?.scannedAt)
+    .filter(Boolean)
+    .sort()
+    .at(-1);
   showStatus(
-    `${deadlineCount} credit windows across ${snapshot.courseCount} courses`,
-    `Last scan ${new Date(snapshot.scannedAt).toLocaleString()}${missing ? ` · ${missing} items have no posted cutoff` : ""}`
+    `${totalEvents} calendar events across enabled sources`,
+    latest ? `Last scan ${new Date(latest).toLocaleString()}` : "Choose sources and courses, then scan."
   );
-  elements.download.disabled = !snapshot.events.length;
+}
+
+function render() {
+  elements.autoSync.checked = currentSettings.autoSync;
+  elements.endpoint.value = currentSettings.syncEndpoint;
+  elements.sourceToggles.prairieLearn.checked = currentSettings.enabledSources.prairieLearn;
+  elements.sourceToggles.gradescope.checked = currentSettings.enabledSources.gradescope;
+  renderCourses("prairieLearn");
+  renderCourses("gradescope");
+  renderSummaries();
 }
 
 async function load() {
-  const [{ settings }, { snapshot, connection }] = await Promise.all([
+  const [{ settings }, local] = await Promise.all([
     chrome.storage.sync.get("settings"),
-    chrome.storage.local.get(["snapshot", "connection"])
+    chrome.storage.local.get(["snapshot", "gradescopeSnapshot", "connection"])
   ]);
-  const merged = { ...PLCalendarCore.DEFAULT_SETTINGS, ...(settings || {}) };
-  elements.autoSync.checked = merged.autoSync;
-  elements.endpoint.value = merged.syncEndpoint;
-  elements.writeToken.value = connection?.writeToken || "";
-  elements.download.disabled = !snapshot?.events?.length;
-  renderSnapshot(snapshot);
+  currentSettings = PLCalendarCore.normalizeSettings(settings || {});
+  snapshots = {
+    prairieLearn: local.snapshot || null,
+    gradescope: local.gradescopeSnapshot || null
+  };
+  elements.writeToken.value = local.connection?.writeToken || "";
+  render();
 }
 
 async function requestEndpointPermission(endpoint) {
@@ -49,7 +139,6 @@ async function requestEndpointPermission(endpoint) {
   if (url.protocol !== "https:" && !["127.0.0.1", "localhost"].includes(url.hostname)) {
     throw new Error("Remote calendar servers must use HTTPS.");
   }
-
   const origin = `${url.protocol}//${url.host}/*`;
   const hasPermission = await chrome.permissions.contains({ origins: [origin] });
   if (!hasPermission) {
@@ -58,37 +147,66 @@ async function requestEndpointPermission(endpoint) {
   }
 }
 
-async function saveSettings() {
+async function saveSettings({ requestPermission = false } = {}) {
   const endpoint = elements.endpoint.value.trim() || PLCalendarCore.DEFAULT_SETTINGS.syncEndpoint;
-  if (elements.autoSync.checked) await requestEndpointPermission(endpoint);
-  const settings = {
+  if (requestPermission && elements.autoSync.checked) await requestEndpointPermission(endpoint);
+  currentSettings = PLCalendarCore.normalizeSettings({
+    ...currentSettings,
     autoSync: elements.autoSync.checked,
-    syncEndpoint: endpoint
-  };
+    syncEndpoint: endpoint,
+    enabledSources: {
+      prairieLearn: elements.sourceToggles.prairieLearn.checked,
+      gradescope: elements.sourceToggles.gradescope.checked
+    },
+    selectedCourseIds: {
+      prairieLearn: snapshots.prairieLearn?.courses?.length
+        ? selectedIdsFromUi("prairieLearn")
+        : currentSettings.selectedCourseIds.prairieLearn,
+      gradescope: snapshots.gradescope?.courses?.length
+        ? selectedIdsFromUi("gradescope")
+        : currentSettings.selectedCourseIds.gradescope
+    }
+  });
   await Promise.all([
-    chrome.storage.sync.set({ settings }),
+    chrome.storage.sync.set({ settings: currentSettings }),
     chrome.storage.local.set({ connection: { writeToken: elements.writeToken.value.trim() } })
   ]);
-  elements.feedState.textContent = settings.autoSync ? "Calendar sync enabled" : "Manual .ics export only";
+  return currentSettings;
+}
+
+async function findSourceTab(source) {
+  for (const pattern of SOURCE_META[source].patterns) {
+    const tabs = await chrome.tabs.query({ url: pattern });
+    const tab = tabs.find((candidate) => candidate.id);
+    if (tab) return tab;
+  }
+  return null;
+}
+
+async function scanSource(source) {
+  const tab = await findSourceTab(source);
+  if (!tab?.id) {
+    if (currentSettings.enabledSources[source]) {
+      throw new Error(`Open ${SOURCE_META[source].label} in a browser tab.`);
+    }
+    return null;
+  }
+  const response = await chrome.tabs.sendMessage(tab.id, { type: "SCAN" });
+  if (!response?.ok) throw new Error(response?.error || `${SOURCE_META[source].label} scan failed.`);
+  snapshots[source] = response.result;
+  return response.result;
 }
 
 elements.scan.addEventListener("click", async () => {
   elements.scan.disabled = true;
-  showStatus("Scanning…", "Reading course and assessment pages.");
+  showStatus("Scanning…", "Reading selected course and assignment pages.");
   try {
-    await saveSettings();
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id || !tab.url?.startsWith("https://us.prairielearn.com/")) {
-      throw new Error("Open a PrairieLearn tab before scanning.");
-    }
-    const response = await chrome.tabs.sendMessage(tab.id, { type: "SCAN" });
-    if (!response?.ok) throw new Error(response?.error || "The scan did not complete.");
-    renderSnapshot(response.result);
-    if (response.result.sync && !response.result.sync.ok) {
-      elements.feedState.textContent = "Scanned; calendar server is unavailable";
-    } else if (elements.autoSync.checked) {
-      elements.feedState.textContent = "Calendar feed updated";
-    }
+    await saveSettings({ requestPermission: true });
+    const results = await Promise.allSettled(Object.keys(SOURCE_META).map(scanSource));
+    render();
+    const failures = results.filter((result) => result.status === "rejected").map((result) => result.reason.message);
+    if (failures.length) showStatus("Scan partly completed", failures.join(" "), true);
+    else elements.feedState.textContent = currentSettings.autoSync ? "Calendar feeds updated" : "Local snapshots updated";
   } catch (error) {
     showStatus("Scan failed", error.message, true);
   } finally {
@@ -96,23 +214,54 @@ elements.scan.addEventListener("click", async () => {
   }
 });
 
-elements.download.addEventListener("click", async () => {
-  const { snapshot } = await chrome.storage.local.get("snapshot");
-  if (!snapshot?.events?.length) return;
-  const ics = PLCalendarCore.toICS(snapshot.events);
-  const response = await chrome.runtime.sendMessage({ type: "DOWNLOAD_ICS", ics });
-  if (!response?.ok) showStatus("Download failed", response?.error || "Unknown error", true);
-});
+for (const source of Object.keys(SOURCE_META)) {
+  document.querySelector(SOURCE_META[source].coursesElement).addEventListener("change", async (event) => {
+    if (!event.target.matches('input[type="checkbox"]')) return;
+    try {
+      await saveSettings();
+      renderSummaries();
+      elements.feedState.textContent = "Course selection saved; scan to apply it";
+    } catch (error) {
+      showStatus("Could not save course selection", error.message, true);
+    }
+  });
+
+  elements.sourceToggles[source].addEventListener("change", async () => {
+    try {
+      await saveSettings();
+      renderSummaries();
+      elements.feedState.textContent = `${SOURCE_META[source].label} monitoring ${elements.sourceToggles[source].checked ? "enabled" : "disabled"}; scan to apply it`;
+    } catch (error) {
+      showStatus("Could not save source setting", error.message, true);
+    }
+  });
+
+  elements.downloads[source].addEventListener("click", async () => {
+    const snapshot = snapshots[source];
+    if (!snapshot?.events?.length) return;
+    const ics = PLCalendarCore.toICS(snapshot.events, new Date(), {
+      calendarName: `${SOURCE_META[source].label} Deadlines`
+    });
+    const response = await chrome.runtime.sendMessage({
+      type: "DOWNLOAD_ICS",
+      ics,
+      filename: `${source === "prairieLearn" ? "prairielearn" : "gradescope"}-deadlines.ics`
+    });
+    if (!response?.ok) showStatus("Download failed", response?.error || "Unknown error", true);
+  });
+}
 
 elements.autoSync.addEventListener("change", () => {
-  saveSettings().catch((error) => showStatus("Could not save", error.message, true));
+  saveSettings({ requestPermission: true }).then(() => {
+    elements.feedState.textContent = elements.autoSync.checked ? "Calendar server sync enabled" : "Calendar server sync disabled";
+  }).catch((error) => showStatus("Could not save", error.message, true));
 });
 
 elements.saveConnection.addEventListener("click", async () => {
   elements.saveConnection.disabled = true;
   try {
-    await saveSettings();
-    showStatus("Connection saved", "The next PrairieLearn scan will use this calendar server.");
+    await saveSettings({ requestPermission: true });
+    showStatus("Connection saved", "Both sources will use this calendar server.");
   } catch (error) {
     showStatus("Could not save connection", error.message, true);
   } finally {
