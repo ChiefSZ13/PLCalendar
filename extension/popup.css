@@ -49,8 +49,8 @@ button:disabled { cursor: wait; opacity: .6; }
 .course-choice span { min-width: 0; overflow-wrap: anywhere; }
 .course-choice small { display: block; color: #8993a1; }
 
-.downloads { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 3px; }
-.downloads button { padding-inline: 8px; font-size: 12px; }
+.downloads { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-top: 3px; }
+.downloads button { padding-inline: 6px; font-size: 11px; }
 
 .settings { display: grid; gap: 9px; margin-top: 17px; padding-top: 15px; border-top: 1px solid #dbe2ea; }
 .settings > label:not(.toggle) { color: #667085; font-size: 12px; }

@@ -5,7 +5,7 @@ var PLCalendarCore = (() => {
   const DEFAULT_SETTINGS = Object.freeze({
     autoSync: true,
     syncEndpoint: "http://127.0.0.1:49321/api/events",
-    enabledSources: Object.freeze({ prairieLearn: true, gradescope: false }),
+    enabledSources: Object.freeze({ prairieLearn: true, gradescope: false, prairieTest: true }),
     selectedCourseIds: Object.freeze({ prairieLearn: null, gradescope: Object.freeze([]) })
   });
 
@@ -38,10 +38,12 @@ var PLCalendarCore = (() => {
 
   function sourceSyncEndpoint(endpoint, source) {
     const url = new URL(endpoint || DEFAULT_SETTINGS.syncEndpoint);
-    if (source === "gradescope") {
-      url.pathname = /\/api\/events\/?$/.test(url.pathname)
-        ? url.pathname.replace(/\/api\/events\/?$/, "/api/gradescope/events")
-        : "/api/gradescope/events";
+    const sourcePaths = {
+      gradescope: "/api/gradescope/events",
+      prairieTest: "/api/prairietest/events"
+    };
+    if (sourcePaths[source]) {
+      url.pathname = sourcePaths[source];
     }
     return url.href;
   }
@@ -417,14 +419,16 @@ var PLCalendarCore = (() => {
     const calendarName = options.calendarName || (allDay
       ? "PrairieLearn Deadlines (All Day)"
       : "PrairieLearn Deadlines");
+    const calendarDescription = options.calendarDescription || "Automatically collected course deadlines";
+    const alarmLabel = options.alarmLabel || "Course deadline";
     const lines = [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
-      "PRODID:-//PLCalendar//PrairieLearn Calendar//EN",
+      "PRODID:-//PLCalendar//Course Deadline Calendar//EN",
       "CALSCALE:GREGORIAN",
       "METHOD:PUBLISH",
       `X-WR-CALNAME:${escapeICS(calendarName)}`,
-      "X-WR-CALDESC:Automatically collected PrairieLearn deadlines"
+      `X-WR-CALDESC:${escapeICS(calendarDescription)}`
     ];
 
     for (const event of events) {
@@ -444,16 +448,17 @@ var PLCalendarCore = (() => {
         `SUMMARY:${escapeICS(event.title)}`,
         `DESCRIPTION:${escapeICS(event.description)}`,
         `URL:${escapeICS(event.url)}`,
+        ...(event.location ? [`LOCATION:${escapeICS(event.location)}`] : []),
         `CATEGORIES:${escapeICS(event.category)}`,
         "BEGIN:VALARM",
         "TRIGGER:-P1D",
         "ACTION:DISPLAY",
-        "DESCRIPTION:PrairieLearn deadline tomorrow",
+        `DESCRIPTION:${escapeICS(`${alarmLabel} tomorrow`)}`,
         "END:VALARM",
         "BEGIN:VALARM",
         "TRIGGER:-PT2H",
         "ACTION:DISPLAY",
-        "DESCRIPTION:PrairieLearn deadline in 2 hours",
+        `DESCRIPTION:${escapeICS(`${alarmLabel} in 2 hours`)}`,
         "END:VALARM",
         "END:VEVENT"
       );

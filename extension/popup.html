@@ -12,7 +12,7 @@
         <div class="mark">DC</div>
         <div>
           <h1>Deadline calendar</h1>
-          <p>PrairieLearn + Gradescope</p>
+          <p>PrairieLearn + Gradescope + PrairieTest</p>
         </div>
       </header>
 
@@ -21,7 +21,7 @@
         <span id="status-detail">Choose sources and courses, then scan.</span>
       </section>
 
-      <button id="scan" class="primary">Scan selected courses</button>
+      <button id="scan" class="primary">Scan enabled sources</button>
 
       <section class="source-settings" aria-label="Monitored courses">
         <article class="source-card">
@@ -39,11 +39,19 @@
           </label>
           <div id="gradescope-courses" class="course-list"></div>
         </article>
+
+        <article class="source-card">
+          <label class="toggle source-toggle">
+            <input id="monitor-prairietest" type="checkbox">
+            <span><strong>PrairieTest</strong><small id="prairietest-summary">Open PrairieTest to sync reservations</small></span>
+          </label>
+        </article>
       </section>
 
       <section class="downloads">
         <button id="download-prairielearn">Download PrairieLearn .ics</button>
         <button id="download-gradescope">Download Gradescope .ics</button>
+        <button id="download-prairietest">Download PrairieTest .ics</button>
       </section>
 
       <section class="settings">

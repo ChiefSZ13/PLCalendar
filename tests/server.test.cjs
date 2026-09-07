@@ -137,8 +137,41 @@ test("protects remote writes and calendar feeds with separate tokens", async (co
   assert.equal(gradescopeAllDay.status, 200);
   assert.match(await gradescopeAllDay.text(), /DTSTART;VALUE=DATE:20260908/);
 
+  const prairieTestSnapshot = {
+    scannedAt: "2026-09-07T12:00:00.000Z",
+    events: [{
+      uid: "prairietest-3554945@plcalendar.local",
+      title: "ECE 330 · Quiz 0",
+      start: "2026-09-08T23:00:00.000Z",
+      end: "2026-09-08T23:50:00.000Z",
+      description: "Duration: 50 minutes",
+      location: "Grainger Library 057",
+      url: "https://us.prairietest.com/pt/student/reservation/3554945",
+      category: "PrairieTest"
+    }]
+  };
+  const prairieTestWrite = await fetch(`${baseUrl}/api/prairietest/events`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${writeToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(prairieTestSnapshot)
+  });
+  assert.equal(prairieTestWrite.status, 200);
+  assert.equal((await prairieTestWrite.json()).source, "prairieTest");
+
+  const prairieTestFeed = await fetch(`${baseUrl}/feeds/${feedToken}/prairietest.ics`);
+  assert.equal(prairieTestFeed.status, 200);
+  const prairieTestIcs = await prairieTestFeed.text();
+  assert.match(prairieTestIcs, /X-WR-CALNAME:PrairieTest Reservations/);
+  assert.match(prairieTestIcs, /DTEND:20260908T235000Z/);
+  assert.match(prairieTestIcs, /LOCATION:Grainger Library 057/);
+  assert.equal((await fetch(`${baseUrl}/feeds/${feedToken}/prairietest-all-day.ics`)).status, 404);
+
   const health = await fetch(`${baseUrl}/health`).then((response) => response.json());
   assert.equal(health.sources.prairieLearn.eventCount, 1);
   assert.equal(health.sources.gradescope.eventCount, 1);
-  assert.equal(health.eventCount, 2);
+  assert.equal(health.sources.prairieTest.eventCount, 1);
+  assert.equal(health.eventCount, 3);
 });

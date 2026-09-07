@@ -10,7 +10,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   const sourcePatterns = [
     "https://us.prairielearn.com/*",
     "https://www.gradescope.com/*",
-    "https://gradescope.com/*"
+    "https://gradescope.com/*",
+    "https://us.prairietest.com/*"
   ];
   for (const pattern of sourcePatterns) {
     const tabs = await chrome.tabs.query({ url: pattern });

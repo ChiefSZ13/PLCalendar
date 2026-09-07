@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Course Deadline Calendar",
-  "version": "0.6.0",
-  "description": "Collect selected PrairieLearn and Gradescope deadlines into private calendar feeds.",
+  "version": "0.7.0",
+  "description": "Collect PrairieLearn, Gradescope, and PrairieTest deadlines into private calendar feeds.",
   "permissions": [
     "alarms",
     "downloads",
@@ -13,6 +13,7 @@
     "https://us.prairielearn.com/*",
     "https://www.gradescope.com/*",
     "https://gradescope.com/*",
+    "https://us.prairietest.com/*",
     "http://127.0.0.1:49321/*"
   ],
   "optional_host_permissions": [
@@ -31,6 +32,11 @@
     {
       "matches": ["https://www.gradescope.com/*", "https://gradescope.com/*"],
       "js": ["core.js", "gradescope-core.js", "gradescope-content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://us.prairietest.com/*"],
+      "js": ["core.js", "prairietest-core.js", "prairietest-content.js"],
       "run_at": "document_idle"
     }
   ],

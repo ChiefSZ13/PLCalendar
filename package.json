@@ -1,11 +1,11 @@
 {
   "name": "prairielearn-calendar",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
-  "description": "Private PrairieLearn and Gradescope deadline sync for Apple Calendar",
+  "description": "Private PrairieLearn, Gradescope, and PrairieTest sync for Apple Calendar",
   "scripts": {
     "start": "node companion/server.mjs",
     "test": "node --test tests/*.test.cjs",
-    "check": "node --check extension/core.js && node --check extension/content.js && node --check extension/gradescope-core.js && node --check extension/gradescope-content.js && node --check extension/background.js && node --check extension/popup.js && node --check companion/server.mjs"
+    "check": "node --check extension/core.js && node --check extension/content.js && node --check extension/gradescope-core.js && node --check extension/gradescope-content.js && node --check extension/prairietest-core.js && node --check extension/prairietest-content.js && node --check extension/background.js && node --check extension/popup.js && node --check companion/server.mjs"
   }
 }

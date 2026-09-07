@@ -15,7 +15,7 @@ const {
 
 test("normalizes persisted source and course-selection settings", () => {
   const defaults = normalizeSettings();
-  assert.deepEqual(defaults.enabledSources, { prairieLearn: true, gradescope: false });
+  assert.deepEqual(defaults.enabledSources, { prairieLearn: true, gradescope: false, prairieTest: true });
   assert.equal(defaults.selectedCourseIds.prairieLearn, null);
   assert.deepEqual(defaults.selectedCourseIds.gradescope, []);
 
@@ -23,12 +23,16 @@ test("normalizes persisted source and course-selection settings", () => {
     enabledSources: { gradescope: true },
     selectedCourseIds: { prairieLearn: [217654], gradescope: ["1378863", "1378863"] }
   });
-  assert.deepEqual(customized.enabledSources, { prairieLearn: true, gradescope: true });
+  assert.deepEqual(customized.enabledSources, { prairieLearn: true, gradescope: true, prairieTest: true });
   assert.deepEqual(customized.selectedCourseIds.prairieLearn, ["217654"]);
   assert.deepEqual(customized.selectedCourseIds.gradescope, ["1378863"]);
   assert.equal(
     sourceSyncEndpoint("https://calendar.example/api/events", "gradescope"),
     "https://calendar.example/api/gradescope/events"
+  );
+  assert.equal(
+    sourceSyncEndpoint("https://calendar.example/api/events", "prairieTest"),
+    "https://calendar.example/api/prairietest/events"
   );
 });
 
